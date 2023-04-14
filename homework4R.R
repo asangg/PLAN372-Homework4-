@@ -1,0 +1,110 @@
+library(tidycensus)
+library(tidyverse)
+library(lubridate) 
+#load data
+setwd("C:/Users/alexs/Documents/plan372-sp23")
+data = read_csv("airport_pairs.csv")
+
+
+#population, age, income
+
+#Question 1
+
+#table showing arriving at RDU
+rdu_arrive<-data[data$dest=="RDU",]
+
+#table showing departures from RDU
+rdu_depart<-data[data$origin=="RDU",]
+
+rdu_total<-data[data$origin=="RDU" | data$dest=="RDU",]
+
+
+#Most popular destinations
+pop_dest<-rdu_total[order(-rdu_total$passengers),] #ATL
+write_csv(pop_dest, "pop_dest.csv")
+#pop_dest<-arrange(rdu_total, desc(passengers), by_group=FALSE) Alternative code using arrange
+
+rdu_total<-rdu_total[rdu_total$passengers>10000,] #updated total RDU airport pairs with 10,000 passengers >
+
+acs_vars = load_variables(2021, "acs5")
+
+censusdata<-get_acs(geography="cbsa",
+              variables=c(
+                "Population Total"="B01003_001", #population total
+                "HouseholdIncome>250000"="B19001_017"), #Household income in the past 12 months above 250,000
+              year=2021,
+              output="wide"
+              )
+#Merge census data to airport data
+merged_origin <- merge(censusdata, rdu_total, by.x="GEOID",by.y="origin_cbsa") #finds population and income for origin airport
+#merged_origin<-merged_origin[-c(4,7,8,10:15)]
+
+merged_destin <- merge(censusdata, rdu_total, by.x="GEOID",by.y="dest_cbsa") #finds population and income for destination airport
+#merged_destin<-merged_destin[-c(4,7,8,10:15)]
+
+
+merged<-merge(merged_origin,merged_destin, by = "passengers") #merging the two tables by passengers
+#Changing column names
+colnames(merged)[4]="OriginPopulation"
+colnames(merged)[6]="Origin_Household_Income_Above_250K"
+colnames(merged)[18]="DestinationPopulation"
+colnames(merged)[20]="Destination_Household_Income_Above_250K"
+
+total_CBSA_volumes<-group_by(merged, NAME.x)%>%
+  summarize(volume=sum(origin_cbsa)) #Total CBSA volume
+
+#Scatter plots  
+
+#Origin Population
+ggplot(merged,aes(x=OriginPopulation, y=passengers))+
+  geom_point(size=1) 
+
+#Destination Population
+ggplot(merged,aes(x=DestinationPopulation, y=passengers))+
+  geom_point(size=1) 
+  
+
+#distance
+ggplot(merged,aes(x=distancemiles.x, y=passengers))+
+  geom_point(size=1) 
+
+#Extra Credit
+ggplot(merged,aes(x=OriginPopulation,y=Origin_Household_Income_Above_250K))+
+  geom_point(size=1) 
+
+ggplot(merged,aes(x=DestinationPopulation, y=Destination_Household_Income_Above_250K))+
+  geom_point(size=1)
+
+#Question 3 Regression
+
+#origin
+regres<-lm(passengers~OriginPopulation,merged)
+summary(regres) #3.553 coefficient 
+
+#Destination
+regres2<-lm(passengers~DestinationPopulation,merged)
+summary(regres2)
+
+
+#Distance
+regres3<-lm(passengers~distancemiles.x,merged)
+summary(regres3)
+
+#Household income
+regres4<-lm(passengers~Destination_Household_Income_Above_250K,merged)
+summary(regres4)
+
+#all variables
+regres_total<-lm(passengers~OriginPopulation+DestinationPopulation+distancemiles.x+Destination_Household_Income_Above_250K,merged)
+summary(regres_total)
+
+
+#Question 4
+
+
+destination_candidates = tibble(
+  distancemiles.x=c(2363, 1606, 496, 2193),
+)
+
+destination_candidates$passenger = predict(regres3, destination_candidates)
+destination_candidates
